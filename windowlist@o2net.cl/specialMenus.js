@@ -7,9 +7,11 @@
 
 
 const Clutter = imports.gi.Clutter;
+const Gdk = imports.gi.Gdk; // @@ added import
 const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
+const Meta = imports.gi.Meta; // @@ added import
 const Params = imports.misc.params;
 const PopupMenu = imports.ui.popupMenu;
 const Shell = imports.gi.Shell;
@@ -193,6 +195,15 @@ AppThumbnailHoverMenu.prototype = {
     }
 }
 
+//@@ add the following in
+const MINIMIZE                    = "Minimize";                                 
+const MAXIMIZE                    = "Maximize";                                 
+const RESTORE                     = "Restore";                                  
+const MOVE                        = "Move";                                     
+const RESIZE                      = "Resize";                                   
+const CLOSE_WINDOW                = "Close";
+const extraMenuItems = [MINIMIZE, MAXIMIZE, RESTORE, MOVE, RESIZE, CLOSE_WINDOW];
+
 function RightClickAppPopupMenu() {
     this._init.apply(this, arguments);
 }
@@ -211,28 +222,57 @@ RightClickAppPopupMenu.prototype = {
 
         this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        this._menuItemCloseWindow = new PopupMenu.PopupMenuItem('Close');
-        this._menuItemCloseWindow.connect('activate', Lang.bind(this, this._onMenuItemCloseWindowActivate));
-        this.addMenuItem(this._menuItemCloseWindow);
-        this._menuItemMinimizeWindow = new PopupMenu.PopupMenuItem('Minimize');
-        this._menuItemMinimizeWindow.connect('activate', Lang.bind(this, this._onMenuItemMinimizeWindowActivate));
-        this.addMenuItem(this._menuItemMinimizeWindow);
-        this._menuItemMaximizeWindow = new PopupMenu.PopupMenuItem('Maximize');
-        this._menuItemMaximizeWindow.connect('activate', Lang.bind(this, this._onMenuItemMaximizeWindowActivate));
-        this.addMenuItem(this._menuItemMaximizeWindow)
+        /* @@ add the minmize, maximize, ...  */
+        this._items = {};
+        for (let i = 0; i < extraMenuItems.length; ++i) {
+            let name = extraMenuItems[i];
+            this._items[name] = new PopupMenu.PopupMenuItem(name);
+            this._items[name].connect('activate', Lang.bind(this,
+               this._onMenuItemActivate, name)); 
+            this.addMenuItem(this._items[name]);
+        }
+        // @@ remove the _menuItemCloseWindow etc.
     },
 
-    _onMenuItemMaximizeWindowActivate: function() {
-        //causes gnome-shell 3.0.2 to crash
-        //this.metaWindow.maximize(true);
-    },
-
-    _onMenuItemMinimizeWindowActivate: function() {
-        this.metaWindow.minimize(global.get_current_time());
-    },
-
-    _onMenuItemCloseWindowActivate: function() {
-        this.app.request_quit();
+    // @@ remove _onMenuItemXXXWindowActivate, replace with this.
+    _onMenuItemActivate: function (item, event, op) {
+        if (op === MINIMIZE) {
+            this.metaWindow.minimize(global.get_current_time());
+        } else if (op === MAXIMIZE) {
+            this.metaWindow.maximize(Meta.MaximizeFlags.HORIZONTAL |
+                Meta.MaximizeFlags.VERTICAL);
+        } else if (op === RESTORE) {
+            this.metaWindow.unmaximize(Meta.MaximizeFlags.HORIZONTAL |
+                Meta.MaximizeFlags.VERTICAL);
+        } else if (op === RESIZE) {
+            Mainloop.idle_add(Lang.bind(this, function () {                                 
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),                       
+                    rect    = this.metaWindow.get_input_rect(),              
+                    x       = rect.x + rect.width,                          
+                    y       = rect.y + rect.height;                         
+                pointer.warp(scr, x, y);                                    
+                global.display.begin_grab_op(global.screen, this.metaWindow, 
+                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0,
+                    global.get_current_time(), x, y);
+                return false;                                               
+            }));                        
+        } else if (op === MOVE) {
+            Mainloop.idle_add(Lang.bind(this, function () {                                 
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),                       
+                    rect    = this.metaWindow.get_input_rect(),              
+                    x       = rect.x + rect.width/2,                        
+                    y       = rect.y + rect.height/2;                       
+                pointer.warp(scr, x, y);                                    
+                global.display.begin_grab_op(global.screen, this.metaWindow, 
+                    Meta.GrabOp.MOVING, false, true, 1, 0,
+                    global.get_current_time(), x, y);
+                return false;                                               
+            }));            
+        } else if (op === CLOSE_WINDOW) {
+            this.metaWindow.delete(global.get_current_time());
+        }
     },
 
     open: function(animate) {
