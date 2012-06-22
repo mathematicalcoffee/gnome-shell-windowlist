@@ -635,6 +635,7 @@ AppList.prototype = {
             let appGroup = new AppGroup(app);
             Mainloop.idle_add(function () { // sometimes you need to wait a bit for the window to properly "appear".
                 appGroup._updateMetaWindows(metaWorkspace);
+                return false;
             });
             appGroup.watchWorkspace(metaWorkspace);
 
