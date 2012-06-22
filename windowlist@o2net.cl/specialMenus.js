@@ -386,7 +386,7 @@ WindowThumbnail.prototype = {
             delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
         }
 
-        /* @@ try to get this.metaWindow as Wnck window. Compare
+        /* try to get this.metaWindow as Wnck window. Compare
          * by window name and app and size/position.
          * If you have two windows with the same title (like two terminals at
          * home directory) exactly on top of each other, then too bad for you.
@@ -412,7 +412,7 @@ WindowThumbnail.prototype = {
             delete this.buttonInfo.ALWAYS_ON_TOP;
             delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
         }
-        /* @@ Add 'minimize' (_) 'maximize/unmaximize' (M/m) 'close' (X) buttons */
+        /* Add 'minimize' (_) 'maximize/unmaximize' (M/m) 'close' (X) buttons */
         this.windowOptions = new St.BoxLayout({reactive: true, vertical: false});
         this._windowOptionItems = {};
         this._windowOptionIDs = [];
@@ -436,17 +436,25 @@ WindowThumbnail.prototype = {
 
         this.actor.add(this.windowOptions, {expand: false, x_fill: false, 
             x_align: St.Align.MIDDLE});
+    },
 
-        /* Update toggled state for on top/visible workspace */
-        if (this.wnckWindow) {
-            if (this.wnckWindow.is_pinned()) {
-                this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.add_style_pseudo_class('toggled');
-            }
-            if (this.wnckWindow.is_above()) {
-                this._windowOptionItems.ALWAYS_ON_TOP.add_style_pseudo_class('toggled');
-            }
+    /* Every time the hover menu is shown update the always on top/visible workspace
+     * items to match their actual state (in case the user changed it by other
+     * means in the meantime)
+     */
+    _updateWindowOptions: function () {
+        if (this.metaWindow.above) {
+            this._windowOptionItems.ALWAYS_ON_TOP.add_style_pseudo_class('toggled');
+        } else {
+            this._windowOptionItems.ALWAYS_ON_TOP.remove_style_pseudo_class('toggled');
+        }
+        if (this.metaWindow.is_on_all_workspaces()) {
+            this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.add_style_pseudo_class('toggled');
+        } else {
+            this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.remove_style_pseudo_class('toggled');
         }
     },
+
 
     _onActivateWindowOption: function(button, dummy, op) {
         if (op === 'MINIMIZE') {
@@ -472,7 +480,7 @@ WindowThumbnail.prototype = {
             Mainloop.idle_add(Lang.bind(this, function () {
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
-                    rect    = this.metaWindow.get_input_rect(),
+                    rect    = this.metaWindow.get_outer_rect(),
                     x       = rect.x + rect.width/2,
                     y       = rect.y + rect.height/2;
                 pointer.warp(scr, x, y);
@@ -485,7 +493,7 @@ WindowThumbnail.prototype = {
             Mainloop.idle_add(Lang.bind(this, function () {
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
-                    rect    = this.metaWindow.get_input_rect(),
+                    rect    = this.metaWindow.get_outer_rect(),
                     x       = rect.x + rect.width,
                     y       = rect.y + rect.height;
                 pointer.warp(scr, x, y);
@@ -545,6 +553,9 @@ WindowThumbnail.prototype = {
     },
 
     _refresh: function() {
+        if (this.wnckWindow) {
+            this._updateWindowOptions();
+        }
         // Replace the old thumbnail
         this.thumbnail = this._getThumbnail();
 
