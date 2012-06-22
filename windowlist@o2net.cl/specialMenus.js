@@ -585,6 +585,45 @@ RightClickAppPopupMenu.prototype = {
 
         this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
+        /* Window options */
+        this.buttonInfo = {
+            MINIMIZE: "Minimize",
+            MAXIMIZE: "Maximize",
+            RESTORE: "Restore",
+            MOVE: "Move",
+            RESIZE: "Resize",
+            ALWAYS_ON_TOP: "Always on top",
+            ALWAYS_ON_VISIBLE_WORKSPACE: "Always on visible workspace",
+            CLOSE_WINDOW: "Close window"
+        };
+        this._windowOptionItems = {};
+        if (!Wnck) {
+            delete this.buttonInfo.ALWAYS_ON_TOP;
+            delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
+        }
+        for (let op in this.buttonInfo) {
+            if (op === 'ALWAYS_ON_TOP' || op === 'ALWAYS_ON_VISIBLE_WORKSPACE') {
+                // toggles
+                this._windowOptionItems[op] = new PopupMenu.PopupSwitchMenuItem(
+                        this.buttonInfo[op], false);
+                this._windowOptionItems[op].connect('toggled',
+                    Lang.bind(this, this._onActivateWindowOption, op));
+            } else {
+                this._windowOptionItems[op] = new PopupMenu.PopupMenuItem(
+                        this.buttonInfo[op]);
+                this._windowOptionItems[op].connect('activate',
+                    Lang.bind(this, this._onActivateWindowOption, op));
+            }
+            this.addMenuItem(this._windowOptionItems[op]);
+        }
+        this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem);
+        if (Wnck) {
+        // whenever the menu opens update the always on (top/visible workspace)
+        // toggles incase the user changed this property by some other means.
+            this.connect('open-state-changed', Lang.bind(this, this._updateWindowOptions));
+        }
+        /* /End window options */
+
         this._menuItemExpandGroup = new PopupMenu.PopupMenuItem("Expand Group");
         this._menuItemExpandGroup.connect('activate', Lang.bind(this, this._onMenuItemExpandGroup));
         this.addMenuItem(this._menuItemExpandGroup);
@@ -596,6 +635,95 @@ RightClickAppPopupMenu.prototype = {
 //        this._menuItemCloseWindow = new PopupMenu.PopupMenuItem('Close All Windows');
 //        this._menuItemCloseWindow.connect('activate', Lang.bind(this, this._onMenuItemCloseWindowActivate));
 //        this.addMenuItem(this._menuItemCloseWindow);
+    },
+
+    _onActivateWindowOption: function(button, dummy, op) {
+        let metaWindow = this.appGroup.lastFocused;
+        if (!metaWindow) {
+            return;
+        }
+        if (op === 'MINIMIZE') {
+            metaWindow.minimize();
+        } else if (op === 'MAXIMIZE') {
+            metaWindow.maximize(Meta.MaximizeFlags.HORIZONTAL |
+                Meta.MaximizeFlags.VERTICAL);
+        } else if (op === 'RESTORE') {
+            metaWindow.unmaximize(Meta.MaximizeFlags.HORIZONTAL |
+                Meta.MaximizeFlags.VERTICAL);
+        } else if (op === 'CLOSE_WINDOW') {
+            metaWindow.delete(global.get_current_time());
+        } else if (op === 'MOVE') {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = metaWindow.get_outer_rect(),
+                    x       = rect.x + rect.width/2,
+                    y       = rect.y + rect.height/2;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, metaWindow,
+                    Meta.GrabOp.MOVING, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        } else if (op === 'RESIZE') {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = metaWindow.get_outer_rect(),
+                    x       = rect.x + rect.width,
+                    y       = rect.y + rect.height;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, metaWindow,
+                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        } else if (op === 'ALWAYS_ON_TOP') {
+            let wnckWindow = this.appGroup.wnckWindow;
+            if (!wnckWindow) { 
+                this._windowOptionItems[op].setToggleState(!this._windowOptionItems[op].state);
+                return; 
+            }
+            if (wnckWindow.is_above()) {
+                wnckWindow.unmake_above();
+            } else {
+                wnckWindow.make_above();
+            }
+        } else if (op === 'ALWAYS_ON_VISIBLE_WORKSPACE') {
+            let wnckWindow = this.appGroup.wnckWindow;
+            if (!wnckWindow) { 
+                this._windowOptionItems[op].setToggleState(!this._windowOptionItems[op].state);
+                return; 
+            }
+            if (wnckWindow.is_pinned()) {
+                wnckWindow.unpin();
+            } else {
+                wnckWindow.pin();
+            }
+        } else {
+            log('unrecognized operation ' + op);
+        }
+    },
+
+    /* if user uses other means to change always on top/visible workspace (like
+     * right clicking the system title bar) we have to reflect that change.
+     */
+    _updateWindowOptions: function (menu, open) {
+        if (!open || !this.appGroup.lastFocused) {
+            return;
+        }
+        if (this._windowOptionItems.ALWAYS_ON_TOP.state !==
+                this.appGroup.lastFocused.above) {
+            this._windowOptionItems.ALWAYS_ON_TOP.setToggleState(
+                this.appGroup.lastFocused.above
+            );
+        }
+        if (this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.state !==
+                this.appGroup.lastFocused.is_on_all_workspaces()) {
+            this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.setToggleState(
+                    this.appGroup.lastFocused.is_on_all_workspaces()
+            );
+        }
     },
 
     _onMenuItemExpandGroup: function() {
