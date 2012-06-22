@@ -28,3 +28,17 @@
 .window-thumbnail:hover {
     background-color: #4c4c4c;
 }
+
+.window-options-button {
+    border: 1px solid white;
+    color: white;
+    padding: 4px;
+}
+
+.window-options-button:hover {
+    background-color: black;
+}
+
+.window-options-button:toggled {
+    background-color: #76b0ec;
+}
