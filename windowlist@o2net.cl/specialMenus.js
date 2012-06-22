@@ -7,9 +7,11 @@
 
 
 const Clutter = imports.gi.Clutter;
+const Gdk = imports.gi.Gdk;
 const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
+const Meta = imports.gi.Meta;
 const Params = imports.misc.params;
 const PopupMenu = imports.ui.popupMenu;
 const Shell = imports.gi.Shell;
@@ -18,6 +20,16 @@ const St = imports.gi.St;
 
 const HOVER_MENU_TIMEOUT = 1000;
 const THUMBNAIL_DEFAULT_SIZE = Math.max(150, Main.layoutManager.primaryMonitor.width / 10);
+/* see if Wnck can be found (if not, skip 'always on top' and 
+ * 'always on visible workspace')
+ */
+var Wnck;
+try {
+    Wnck = imports.gi.Wnck;
+} catch (err) {
+    Wnck = false;
+    log("gir for Wnck not found; skipping 'Always on top' and 'Always on visible workspace'");
+}
 
 function RightClickPopupMenu() {
     this._init.apply(this, arguments);
@@ -337,8 +349,10 @@ WindowThumbnail.prototype = {
         //fixing this should also allow the text to be centered
         this.titleActor.width = THUMBNAIL_DEFAULT_SIZE;
 
+        this._setupWindowOptions();
         this.actor.add(this.thumbnailActor);
         this.actor.add(this.titleActor);
+
         this._refresh();
 
         // the thumbnail actor will automatically reflect changes in the window
@@ -354,6 +368,151 @@ WindowThumbnail.prototype = {
                                                         this.actor.remove_style_pseudo_class('hover');
                                                         this.actor.remove_style_pseudo_class('selected');
                                                     }));
+    },
+
+    _setupWindowOptions: function () {
+        /* Stuff for window options */
+        this.buttonInfo = {
+            ALWAYS_ON_TOP: {label: '\u25b2', toggle: true},
+            ALWAYS_ON_VISIBLE_WORKSPACE: {label: '\u2693', toggle: true},
+            MOVE: {label: '+'},
+            RESIZE: {label: '\u21f2'},
+            MINIMIZE: {label: '_'},
+            MAXIMIZE: {label: '\u2610', toggleLabel: '\u29c9'},
+            CLOSE_WINDOW: {label: 'X'}
+        };
+        if (!Wnck) {
+            delete this.buttonInfo.ALWAYS_ON_TOP;
+            delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
+        }
+
+        /* @@ try to get this.metaWindow as Wnck window. Compare
+         * by window name and app and size/position.
+         * If you have two windows with the same title (like two terminals at
+         * home directory) exactly on top of each other, then too bad for you.
+         */
+        Wnck.Screen.get_default().force_update(); // make sure window list is up to date
+        let windows = Wnck.Screen.get_default().get_windows();
+        for (let i = 0; i < windows.length; ++i) {
+            if (windows[i].get_name() === this.metaWindow.title &&
+                    windows[i].get_application().get_name() === this.app.get_name() &&
+                    windows[i].get_pid() === this.metaWindow.get_pid()) {
+                let rect = this.metaWindow.get_outer_rect();
+                let [x, y, width, height] = windows[i].get_geometry();
+                if (rect.x === x && rect.y === y && rect.width === width &&
+                        rect.height === height) {
+                    this.wnckWindow = windows[i];        
+                    break;
+                }
+            }
+        }
+
+        if (!this.wnckWindow) {
+            log("couldn't find the wnck window corresponding to this.metaWindow");
+            delete this.buttonInfo.ALWAYS_ON_TOP;
+            delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
+        }
+        /* @@ Add 'minimize' (_) 'maximize/unmaximize' (M/m) 'close' (X) buttons */
+        this.windowOptions = new St.BoxLayout({reactive: true, vertical: false});
+        this._windowOptionItems = {};
+        this._windowOptionIDs = [];
+        let button;
+        for (let buttonName in this.buttonInfo) {
+            // tooltip
+            let buttonInfo = this.buttonInfo[buttonName];
+            button = new St.Button({
+                style_class: 'window-options-button',
+                label: buttonInfo.label,
+                reactive: true // <-- necessary?
+            });
+            button.set_track_hover(true);
+            //this._windowOptionItems[buttonName].set_tooltip_text(buttonName);
+            this._windowOptionIDs.push(
+                button.connect('clicked',
+                    Lang.bind(this, this._onActivateWindowOption, buttonName)));
+            this.windowOptions.add(button);
+            this._windowOptionItems[buttonName] = button;
+        }
+
+        this.actor.add(this.windowOptions, {expand: false, x_fill: false, 
+            x_align: St.Align.MIDDLE});
+
+        /* Update toggled state for on top/visible workspace */
+        if (this.wnckWindow) {
+            if (this.wnckWindow.is_pinned()) {
+                this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.add_style_pseudo_class('toggled');
+            }
+            if (this.wnckWindow.is_above()) {
+                this._windowOptionItems.ALWAYS_ON_TOP.add_style_pseudo_class('toggled');
+            }
+        }
+    },
+
+    _onActivateWindowOption: function(button, dummy, op) {
+        if (op === 'MINIMIZE') {
+            if (this.metaWindow.minimized) {
+                this.metaWindow.unminimize();
+            } else {
+                this.metaWindow.minimize();
+            }
+        } else if (op === 'MAXIMIZE') {
+            if (this.metaWindow.get_maximized() ===
+                    (Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL)) {
+                this.metaWindow.unmaximize(Meta.MaximizeFlags.HORIZONTAL |
+                    Meta.MaximizeFlags.VERTICAL);
+                this._windowOptionItems[op].label = this.buttonInfo[op].label;
+            } else {
+                this.metaWindow.maximize(Meta.MaximizeFlags.HORIZONTAL |
+                    Meta.MaximizeFlags.VERTICAL);
+                this._windowOptionItems[op].label = this.buttonInfo[op].toggleLabel;
+            }
+        } else if (op === 'CLOSE_WINDOW') {
+            this.metaWindow.delete(global.get_current_time());
+        } else if (op === 'MOVE') {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = this.metaWindow.get_input_rect(),
+                    x       = rect.x + rect.width/2,
+                    y       = rect.y + rect.height/2;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, this.metaWindow,
+                    Meta.GrabOp.MOVING, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        } else if (op === 'RESIZE') {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = this.metaWindow.get_input_rect(),
+                    x       = rect.x + rect.width,
+                    y       = rect.y + rect.height;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, this.metaWindow,
+                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        } else if (op === 'ALWAYS_ON_TOP') {
+            if (this.wnckWindow.is_above()) {
+                this.wnckWindow.unmake_above();
+                this._windowOptionItems[op].remove_style_pseudo_class('toggled');
+            } else {
+                this.wnckWindow.make_above();
+                this._windowOptionItems[op].add_style_pseudo_class('toggled');
+            }
+        } else if (op === 'ALWAYS_ON_VISIBLE_WORKSPACE') {
+            if (this.wnckWindow.is_pinned()) {
+                this.wnckWindow.unpin();
+                this._windowOptionItems[op].remove_style_pseudo_class('toggled');
+            } else {
+                this.wnckWindow.pin();
+                this._windowOptionItems[op].add_style_pseudo_class('toggled');
+            }
+        } else {
+            log('unrecognized operation ' + op);
+        }
     },
 
     destroy: function() {
