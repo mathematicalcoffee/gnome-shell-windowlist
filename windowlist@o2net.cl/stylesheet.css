@@ -4,6 +4,9 @@
     color: blue;
     font-style: italic;
 }
+.panel-button:to-be-affected {                                                           
+    text-shadow: blue 0px 2px 2px;
+}   
 
 .window-list-box {
     spacing: 6px;
