@@ -33,6 +33,149 @@ try {
     log("gir for Wnck not found; skipping 'Always on top' and 'Always on visible workspace'");
 }
 
+// Laziness
+Meta.MaximizeFlags.BOTH = Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL;
+// Use the Mutter translations for the window functions.
+// We have to remove the underscores (keyboard accelerators) after.
+const Gettext = imports.gettext;
+const M_ = Gettext.domain('mutter').gettext;
+/* For convenience: a WindowOptions namespace to hold the window function information */
+const WindowOptions = {
+    /* the following expect `win` to be a Meta.Window */
+    MINIMIZE: {
+        label: M_("Mi_nimize"),
+        symbol: '_',
+        action: function (win) {
+            win.minimize();
+        }
+    },
+
+    MAXIMIZE: {
+        label: M_("Ma_ximize"),
+        symbol: '\u2610',
+        toggleOff: 'RESTORE',
+        isToggled: function (win) {
+            return (win.get_maximized() === Meta.MaximizeFlags.BOTH);
+        },
+        action: function (win) {
+            win.maximize(Meta.MaximizeFlags.BOTH);
+        }
+    },
+
+    CLOSE_WINDOW: {
+        label: M_("_Close"),
+        symbol: 'X',
+        action: function (win) {
+            win.delete(global.get_current_time());
+        }
+    },
+
+    MOVE: {
+        label: M_("_Move"),
+        symbol: '+',
+        action: function (win) {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = win.get_outer_rect(),
+                    x       = rect.x + rect.width/2,
+                    y       = rect.y + rect.height/2;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, win,
+                    Meta.GrabOp.MOVING, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        }
+    },
+
+    RESIZE: {
+        label: M_("_Resize"),
+        symbol: '\u21f2',
+        action: function (win) {
+            Mainloop.idle_add(Lang.bind(this, function () {
+                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
+                    [scr,,] = pointer.get_position(),
+                    rect    = win.get_outer_rect(),
+                    x       = rect.x + rect.width,
+                    y       = rect.y + rect.height;
+                pointer.warp(scr, x, y);
+                global.display.begin_grab_op(global.screen, win,
+                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0, global.get_current_time(),
+                    x, y);
+                return false;
+            }));
+        }
+    },
+
+    /* the following expect `win` to be a Wnck.Window */
+    ALWAYS_ON_TOP: {
+        label: M_("Always on _Top"),
+        symbol: '\u25b2',
+        toggleOff: 'NOT_ALWAYS_ON_TOP',
+        isToggled: function (win) {
+            return win.is_above();
+        },
+        metaIsToggled: function (win) {
+            return win.above;
+        },
+        action: function (win) {
+            log('making window above');
+            win.make_above();
+        }
+    },
+
+    ALWAYS_ON_VISIBLE_WORKSPACE: {
+        label: M_("Always on Visible Workspace"),
+        symbol: '\u2693',
+        toggleOff: 'ALWAYS_ON_THIS_WORKSPACE',
+        isToggled: function (win) {
+            return win.is_pinned();
+        },
+        metaIsToggled: function (win) {
+            return win.is_on_all_workspaces();
+        },
+        action: function (win) {
+            win.pin();
+        }
+    },
+
+    // dummy functions
+    NOT_ALWAYS_ON_TOP: {
+        label: M_("Always on _Top"),
+        symbol: '\u25b2',
+        action: function (win) {
+            win.unmake_above();
+        }
+    },
+
+    ALWAYS_ON_THIS_WORKSPACE: {
+        label: M_("Always on Visible Workspace"),
+        symbol: '\u2693',
+        action: function (win) {
+            win.unpin();
+        }
+    },
+
+    RESTORE: {
+        label: M_("Unma_ximize"),
+        symbol: '\u2752',
+        // \u29c9 is two interlinked squares. It's quite tall though.
+        // U+25A3 white square with black square within
+        // U+25F3 white square with upper right quadrant
+        // U+2752 upper right shadowed white square
+        action: function (win) {
+            win.unmaximize(Meta.MaximizeFlags.BOTH);
+        }
+    }
+};
+// remove underscores:
+for (let dummy in WindowOptions) {
+    if (WindowOptions.hasOwnProperty(dummy)) {
+        WindowOptions[dummy].label = WindowOptions[dummy].label.replace(/_/g, '');
+    }
+}
+
 function RightClickPopupMenu() {
     this._init.apply(this, arguments);
 }
@@ -374,18 +517,11 @@ WindowThumbnail.prototype = {
 
     _setupWindowOptions: function () {
         /* Stuff for window options */
-        this.buttonInfo = {
-            ALWAYS_ON_TOP: {label: '\u25b2', toggle: true},
-            ALWAYS_ON_VISIBLE_WORKSPACE: {label: '\u2693', toggle: true},
-            MOVE: {label: '+'},
-            RESIZE: {label: '\u21f2'},
-            MINIMIZE: {label: '_'},
-            MAXIMIZE: {label: '\u2610', toggleLabel: '\u29c9'},
-            CLOSE_WINDOW: {label: 'X'}
-        };
+        this._buttonInfo = [ 'ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE',
+            'MOVE', 'RESIZE', 'MINIMIZE', 'MAXIMIZE', 'CLOSE_WINDOW' ];
         if (!Wnck) {
-            delete this.buttonInfo.ALWAYS_ON_TOP;
-            delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
+            delete this._buttonInfo.ALWAYS_ON_TOP;
+            delete this._buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
         }
 
         /* try to get this.metaWindow as Wnck window. Compare
@@ -414,27 +550,42 @@ WindowThumbnail.prototype = {
             delete this.buttonInfo.ALWAYS_ON_TOP;
             delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
         }
-        /* Add 'minimize' (_) 'maximize/unmaximize' (M/m) 'close' (X) buttons */
+        /* Add buttons */
         this.windowOptions = new St.BoxLayout({reactive: true, vertical: false});
         this._windowOptionItems = {};
         this._windowOptionIDs = [];
-        let button;
-        for (let buttonName in this.buttonInfo) {
-            // tooltip
-            let buttonInfo = this.buttonInfo[buttonName];
-            button = new St.Button({
-                style_class: 'window-options-button',
-                label: buttonInfo.label,
-                reactive: true // <-- necessary?
-            });
+        for (let i = 0; i < this._buttonInfo.length; ++i) {
+            let op = this._buttonInfo[i],
+                buttonInfo = WindowOptions[op],
+                button = new St.Button({
+                    name: op,
+                    style_class: 'window-options-button',
+                    label: buttonInfo.symbol,
+                    reactive: true // <-- necessary?
+                });
             button.set_track_hover(true);
+            button._hoverLabels = [buttonInfo.label];
+            button._parent = this;
+            button._toggled = false;
+            if (buttonInfo.isToggled) {
+                button._hoverLabels.push(WindowOptions[buttonInfo.toggleOff].label);
+            }
+            button.connect('enter-event', Lang.bind(button, function () {
+                this.add_style_pseudo_class('hover');
+                this._parent.titleActor.text = this._hoverLabels[+this._toggled];
+            }));
+            button.connect('leave-event', Lang.bind(button, function () {
+                this.remove_style_pseudo_class('hover');
+                this._parent.titleActor.text = this._parent.metaWindow.get_title();
+            }));
             //this._windowOptionItems[buttonName].set_tooltip_text(buttonName);
             this._windowOptionIDs.push(
                 button.connect('clicked',
-                    Lang.bind(this, this._onActivateWindowOption, buttonName)));
+                    Lang.bind(this, this._onActivateWindowOption, op)));
             this.windowOptions.add(button);
-            this._windowOptionItems[buttonName] = button;
+            this._windowOptionItems[op] = button;
         }
+        this._updateWindowOptions();
 
         this.actor.add(this.windowOptions, {expand: false, x_fill: false, 
             x_align: St.Align.MIDDLE});
@@ -445,84 +596,61 @@ WindowThumbnail.prototype = {
      * means in the meantime)
      */
     _updateWindowOptions: function () {
-        if (this.metaWindow.above) {
-            this._windowOptionItems.ALWAYS_ON_TOP.add_style_pseudo_class('toggled');
-        } else {
-            this._windowOptionItems.ALWAYS_ON_TOP.remove_style_pseudo_class('toggled');
+        // update labels:
+        let toUpdate = ['MAXIMIZE', 'ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE'];
+        for (let i = 0; i < toUpdate.length; ++i) {
+            let op = toUpdate[i],
+                other = op,
+                fun = (WindowOptions[op].metaIsToggled || WindowOptions[op].isToggled);
+                //other = WindowOptions[op].toggleOff;
+            if (!this._windowOptionItems[op]) {
+                return;
+            }
+            if (fun(this.metaWindow)) {
+                this._windowOptionItems[op].add_style_pseudo_class('toggled');
+                this._windowOptionItems[op]._toggled = true;
+                other = WindowOptions[op].toggleOff;
+                // change symbol.
+                this._windowOptionItems[op].label = WindowOptions[other].symbol;
+            } else {
+                this._windowOptionItems[op].remove_style_pseudo_class('toggled');
+                this._windowOptionItems[op]._toggled = false;
+                // change symbol back.
+                this._windowOptionItems[op].label = WindowOptions[op].symbol;
+            }
+            // change hover label to the opposite one, *IF* our cursor has not left
+            if (this._windowOptionItems[op].has_style_pseudo_class('hover')) {
+                this.titleActor.text = WindowOptions[other].label;
+            }
         }
-        if (this.metaWindow.is_on_all_workspaces()) {
-            this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.add_style_pseudo_class('toggled');
-        } else {
-            this._windowOptionItems.ALWAYS_ON_VISIBLE_WORKSPACE.remove_style_pseudo_class('toggled');
-        }
+        return false;
     },
 
-
     _onActivateWindowOption: function(button, dummy, op) {
-        if (op === 'MINIMIZE') {
-            if (this.metaWindow.minimized) {
-                this.metaWindow.unminimize();
-            } else {
-                this.metaWindow.minimize();
-            }
-        } else if (op === 'MAXIMIZE') {
-            if (this.metaWindow.get_maximized() ===
-                    (Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL)) {
-                this.metaWindow.unmaximize(Meta.MaximizeFlags.HORIZONTAL |
-                    Meta.MaximizeFlags.VERTICAL);
-                this._windowOptionItems[op].label = this.buttonInfo[op].label;
-            } else {
-                this.metaWindow.maximize(Meta.MaximizeFlags.HORIZONTAL |
-                    Meta.MaximizeFlags.VERTICAL);
-                this._windowOptionItems[op].label = this.buttonInfo[op].toggleLabel;
-            }
-        } else if (op === 'CLOSE_WINDOW') {
-            this.metaWindow.delete(global.get_current_time());
-        } else if (op === 'MOVE') {
-            Mainloop.idle_add(Lang.bind(this, function () {
-                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
-                    [scr,,] = pointer.get_position(),
-                    rect    = this.metaWindow.get_outer_rect(),
-                    x       = rect.x + rect.width/2,
-                    y       = rect.y + rect.height/2;
-                pointer.warp(scr, x, y);
-                global.display.begin_grab_op(global.screen, this.metaWindow,
-                    Meta.GrabOp.MOVING, false, true, 1, 0, global.get_current_time(),
-                    x, y);
-                return false;
-            }));
-        } else if (op === 'RESIZE') {
-            Mainloop.idle_add(Lang.bind(this, function () {
-                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
-                    [scr,,] = pointer.get_position(),
-                    rect    = this.metaWindow.get_outer_rect(),
-                    x       = rect.x + rect.width,
-                    y       = rect.y + rect.height;
-                pointer.warp(scr, x, y);
-                global.display.begin_grab_op(global.screen, this.metaWindow,
-                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0, global.get_current_time(),
-                    x, y);
-                return false;
-            }));
-        } else if (op === 'ALWAYS_ON_TOP') {
-            if (this.wnckWindow.is_above()) {
-                this.wnckWindow.unmake_above();
-                this._windowOptionItems[op].remove_style_pseudo_class('toggled');
-            } else {
-                this.wnckWindow.make_above();
-                this._windowOptionItems[op].add_style_pseudo_class('toggled');
-            }
-        } else if (op === 'ALWAYS_ON_VISIBLE_WORKSPACE') {
-            if (this.wnckWindow.is_pinned()) {
-                this.wnckWindow.unpin();
-                this._windowOptionItems[op].remove_style_pseudo_class('toggled');
-            } else {
-                this.wnckWindow.pin();
-                this._windowOptionItems[op].add_style_pseudo_class('toggled');
-            }
-        } else {
-            log('unrecognized operation ' + op);
+        let win = ((op === 'ALWAYS_ON_TOP' ||
+                    op === 'NOT_ALWAYS_ON_TOP' ||
+                    op === 'ALWAYS_ON_VISIBLE_WORKSPACE' ||
+                    op === 'ALWAYS_ON_THIS_WORKSPACE') ?
+                this.wnckWindow : this.metaWindow);
+        if (!win) {
+            log('No window');
+            return;
         }
+        if (!WindowOptions[op]) {
+            log("Unrecognized operation '%s'".format(op === undefined ? 'undefined' : op));
+            return;
+        }
+        if (this._windowOptionItems[op]._toggled) {
+            op = WindowOptions[op].toggleOff;
+        }
+        /*
+        if (WindowOptions[op].isToggled && WindowOptions[op].isToggled(win)) {
+        }
+        */
+        WindowOptions[op].action(win);
+        // bah: need this for the .make_above() (etc) to go through.
+        // But I think there is a noticable delay.
+        Mainloop.idle_add(Lang.bind(this, this._updateWindowOptions));
     },
 
     destroy: function() {
@@ -555,9 +683,11 @@ WindowThumbnail.prototype = {
     },
 
     _refresh: function() {
+        /*
         if (this.wnckWindow) {
             this._updateWindowOptions();
         }
+        */
         // Replace the old thumbnail
         this.thumbnail = this._getThumbnail();
 
@@ -588,14 +718,7 @@ RightClickAppPopupMenu.prototype = {
         this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         /* Window options */
-        this.buttonInfo = {
-            MINIMIZE: "Minimize",
-            MAXIMIZE: "Maximize",
-            RESTORE: "Restore",
-            MOVE: "Move",
-            RESIZE: "Resize",
-            CLOSE_WINDOW: "Close window"
-        };
+        this._buttonInfo = ['MINIMIZE', 'MAXIMIZE', 'MOVE', 'RESIZE', 'CLOSE_WINDOW'];
         // only display if the group is expanded
         this._displayWindowOptionsMenu(!this.appGroup.appButtonVisible);
         /* /End window options */
@@ -619,10 +742,12 @@ RightClickAppPopupMenu.prototype = {
         }
         this._windowOptionItems = {};
         this._windowOptionsSubMenu = new PopupMenu.PopupMenuSection();
+        this._windowOptionsSubMenu.connect('open-state-changed', Lang.bind(this,
+            this._updateWindowOptions));
         this._windowOptionsSubMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        for (let op in this.buttonInfo) {
+        for (let op in this._buttonInfo) {
             this._windowOptionItems[op] = new PopupMenu.PopupMenuItem(
-                    this.buttonInfo[op]);
+                    WindowOptions[op].label);
             this._windowOptionItems[op].connect('activate',
                 Lang.bind(this, this._onActivateWindowOption, op));
             this._windowOptionsSubMenu.addMenuItem(this._windowOptionItems[op]);
@@ -643,6 +768,51 @@ RightClickAppPopupMenu.prototype = {
         }
     },
 
+    _onActivateWindowOption: function(button, event, op) {
+        log('activate');
+        /* affect the window our mouse was over when we right-clicked */
+        let metaWindow = this.metaWindow;
+        if (!metaWindow) {
+            log('could not determine which window your mouse was over when you right-clicked');
+            this._forgetButtonClicked();
+            return;
+        }
+        if (!WindowOptions[op]) {
+            log("Unrecognized operation '%s'".format(op === undefined ? 'undefined' : op));
+            return;
+        }
+        if (WindowOptions[op].isToggled && WindowOptions[op].isToggled(metaWindow)) {
+            op = WindowOptions[op].toggleOff;
+        }
+        WindowOptions[op].action(metaWindow);
+        this._updateWindowOptions(this._windowOptionsSubMenu, true);
+        this._forgetButtonClicked();
+    },
+
+    /* Every time the hover menu is shown update the always on top/visible workspace
+     * items to match their actual state (in case the user changed it by other
+     * means in the meantime)
+     */
+    _updateWindowOptions: function (menu, open) {
+        if (!open) {
+            return;
+        }
+        // the only one I need to update is maximize/restore, but this extends
+        // to the others.
+        let toCheck = ['MAXIMIZE']; // , 'ALWAYS_ON_VISIBLE_WORKSPACE', 'ALWAYS_ON_TOP'];
+        for (let i = 0; i < toCheck.length; ++i) {
+            let op = toCheck[i];
+            if (!this._windowOptions[op]) {
+                continue;
+            }
+            if (WindowOptions[op].isToggled(this.metaWindow)) {
+                let op = WindowOptions[op].toggleOff;
+            }
+            // show the opposite label to the toggle state
+            this._windowOptionItems[op].label.text = WindowOptions[op].label;
+        }
+    },
+
     /* OVERRIDE parent implementation to determine which WindowButton to affect */
     _onParentActorButtonRelease: function(actor, event) {
         RightClickPopupMenu.prototype._onParentActorButtonRelease.call(this, actor, event);
@@ -656,7 +826,7 @@ RightClickAppPopupMenu.prototype = {
                 let act = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x, y);
                 if (act && act._delegate &&
                        act._delegate instanceof SpecialButtons.WindowButton) {
-                    this._windowToAffect = act._delegate.metaWindow;
+                    this.metaWindow = act._delegate.metaWindow;
                     this._windowButtonAffected = act;
                     // apply style to the window we will affect?
                     this._windowButtonAffected.add_style_pseudo_class('to-be-affected');
@@ -677,7 +847,7 @@ RightClickAppPopupMenu.prototype = {
 
     _forgetButtonClicked: function () {
         log('forget!');
-        this._windowToAffect = null;
+        this.metaWindow = null;
         if (this._windowButtonAffected) {
             this._windowButtonAffected.remove_style_pseudo_class('to-be-affected');
             this._windowButtonAffected = null;
@@ -687,57 +857,6 @@ RightClickAppPopupMenu.prototype = {
 
     // TODO: when user exits without selecting we must forget.
 
-    _onActivateWindowOption: function(button, event, op) {
-        log('activate');
-        /* affect the window our mouse was over when we right-clicked */
-        let metaWindow = this._windowToAffect;
-        if (!metaWindow) {
-            log('could not determine which window your mouse was over when you right-clicked');
-            this._forgetButtonClicked();
-            return;
-        }
-
-        if (op === 'MINIMIZE') {
-            metaWindow.minimize();
-        } else if (op === 'MAXIMIZE') {
-            metaWindow.maximize(Meta.MaximizeFlags.HORIZONTAL |
-                Meta.MaximizeFlags.VERTICAL);
-        } else if (op === 'RESTORE') {
-            metaWindow.unmaximize(Meta.MaximizeFlags.HORIZONTAL |
-                Meta.MaximizeFlags.VERTICAL);
-        } else if (op === 'CLOSE_WINDOW') {
-            metaWindow.delete(global.get_current_time());
-        } else if (op === 'MOVE') {
-            Mainloop.idle_add(Lang.bind(this, function () {
-                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
-                    [scr,,] = pointer.get_position(),
-                    rect    = metaWindow.get_outer_rect(),
-                    x       = rect.x + rect.width/2,
-                    y       = rect.y + rect.height/2;
-                pointer.warp(scr, x, y);
-                global.display.begin_grab_op(global.screen, metaWindow,
-                    Meta.GrabOp.MOVING, false, true, 1, 0, global.get_current_time(),
-                    x, y);
-                return false;
-            }));
-        } else if (op === 'RESIZE') {
-            Mainloop.idle_add(Lang.bind(this, function () {
-                let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
-                    [scr,,] = pointer.get_position(),
-                    rect    = metaWindow.get_outer_rect(),
-                    x       = rect.x + rect.width,
-                    y       = rect.y + rect.height;
-                pointer.warp(scr, x, y);
-                global.display.begin_grab_op(global.screen, metaWindow,
-                    Meta.GrabOp.RESIZING_SE, false, true, 1, 0, global.get_current_time(),
-                    x, y);
-                return false;
-            }));
-        } else {
-            log('unrecognized operation ' + op);
-        }
-        this._forgetButtonClicked();
-    },
 
     _onMenuItemExpandGroup: function() {
         this.appGroup.showWindowButtons(true);

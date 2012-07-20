@@ -40,8 +40,18 @@
 
 .window-options-button:hover {
     background-color: black;
+    border: 1px solid black;
 }
 
 .window-options-button:toggled {
     background-color: #76b0ec;
+}
+
+#MAXIMIZE:toggled {
+    background-color: transparent;
+}
+
+#MAXIMIZE:hover {
+    background-color: black;
+    border: 1px solid black;
 }
