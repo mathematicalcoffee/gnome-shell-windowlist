@@ -397,6 +397,54 @@ ButtonBox.prototype = {
              });
     },
 
+    expandChild: function (index) {
+        let children = this.actor.get_children(),
+            child = this.actor.get_children()[index];
+        this._expandedChildOldWidth = child.width;
+        this._expandedChild = child;
+        //log('expanding from %d to %d'.format(this._expandedChildOldWidth, this.actor.width));
+        if (!index) {
+            return;
+        }
+        // TODO: they seem to go in the wrong direction.
+        // the child to expand should expand *into* the surrounding
+        // space. Do we have to simultaneously tween all the other guys smaller
+        // instead of tweening this guy larger?
+        /* have to compress everything else first */
+        for (let i = 0; i < children.length; ++i) {
+            if (i !== index) {
+                children[i].hide();
+            }
+        }
+        Tweener.addTween(child,
+            { width: this.actor.width,
+              time: BUTTON_BOX_ANIMATION_TIME,
+              transition: "easeOutQuad"
+            });
+    },
+
+    undoExpand: function () {
+        if (!this._expandedChild) {
+            return;
+        }
+        //log('returning to: ' + this._expandedChildOldWidth);
+        Tweener.addTween(this._expandedChild,
+            { width: this._expandedChildOldWidth,
+              time: BUTTON_BOX_ANIMATION_TIME,
+              transition: "easeOutQuad",
+              onCompleteScope: this,
+              onComplete: function () {
+                  /* show all the hidden children */
+                  let children = this.actor.get_children();
+                  for (let i = 0; i < children.length; ++i) {
+                      children[i].show();
+                  }
+                  this._expandedChild = null;
+                  this._expandedChildOldWidth = null;
+              }
+            });
+    },
+
     add: function(button) {
         this.actor.add_actor(button.actor);
     },

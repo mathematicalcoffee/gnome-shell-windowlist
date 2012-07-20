@@ -742,10 +742,9 @@ RightClickAppPopupMenu.prototype = {
         }
         this._windowOptionItems = {};
         this._windowOptionsSubMenu = new PopupMenu.PopupMenuSection();
-        this._windowOptionsSubMenu.connect('open-state-changed', Lang.bind(this,
-            this._updateWindowOptions));
         this._windowOptionsSubMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        for (let op in this._buttonInfo) {
+        for (let i = 0; i < this._buttonInfo.length; ++i) {
+            let op = this._buttonInfo[i];
             this._windowOptionItems[op] = new PopupMenu.PopupMenuItem(
                     WindowOptions[op].label);
             this._windowOptionItems[op].connect('activate',
@@ -769,7 +768,6 @@ RightClickAppPopupMenu.prototype = {
     },
 
     _onActivateWindowOption: function(button, event, op) {
-        log('activate');
         /* affect the window our mouse was over when we right-clicked */
         let metaWindow = this.metaWindow;
         if (!metaWindow) {
@@ -785,7 +783,6 @@ RightClickAppPopupMenu.prototype = {
             op = WindowOptions[op].toggleOff;
         }
         WindowOptions[op].action(metaWindow);
-        this._updateWindowOptions(this._windowOptionsSubMenu, true);
         this._forgetButtonClicked();
     },
 
@@ -793,65 +790,75 @@ RightClickAppPopupMenu.prototype = {
      * items to match their actual state (in case the user changed it by other
      * means in the meantime)
      */
-    _updateWindowOptions: function (menu, open) {
-        if (!open) {
-            return;
-        }
+    _updateWindowOptions: function (menu) {
         // the only one I need to update is maximize/restore, but this extends
         // to the others.
         let toCheck = ['MAXIMIZE']; // , 'ALWAYS_ON_VISIBLE_WORKSPACE', 'ALWAYS_ON_TOP'];
         for (let i = 0; i < toCheck.length; ++i) {
-            let op = toCheck[i];
-            if (!this._windowOptions[op]) {
+            let op = toCheck[i],
+                other = op;
+            if (!WindowOptions[op] || !this._windowOptionItems[op]) {
                 continue;
             }
             if (WindowOptions[op].isToggled(this.metaWindow)) {
-                let op = WindowOptions[op].toggleOff;
+                other = WindowOptions[op].toggleOff;
             }
             // show the opposite label to the toggle state
-            this._windowOptionItems[op].label.text = WindowOptions[op].label;
+            this._windowOptionItems[op].label.text = WindowOptions[other].label;
         }
     },
 
     /* OVERRIDE parent implementation to determine which WindowButton to affect */
     _onParentActorButtonRelease: function(actor, event) {
         RightClickPopupMenu.prototype._onParentActorButtonRelease.call(this, actor, event);
+        this._forgetButtonClicked();
         if (!this.appGroup.appButtonVisible) {
             /* Try to work out which window we are hovering over */
-            let [x, y] = event.get_coords();
-            /* Sometimes the box pointer of the previous menu is still fading,
-             * so give it a chance to disappear before picking the actor underneath
-             */
-            Mainloop.idle_add(Lang.bind(this, function () {
-                let act = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x, y);
-                if (act && act._delegate &&
-                       act._delegate instanceof SpecialButtons.WindowButton) {
-                    this.metaWindow = act._delegate.metaWindow;
-                    this._windowButtonAffected = act;
-                    // apply style to the window we will affect?
-                    this._windowButtonAffected.add_style_pseudo_class('to-be-affected');
-                } else {
-                    log('DID NOT CATCH IT: ' + act);
+            let [x, y] = event.get_coords(),
+                result = false;
+            //log(x + ', ' + y);
+            [result, x, y] = this._parentActor.transform_stage_point(x, y);
+            if (!result) {
+                log('could not transform stage point to actor-relative point');
+                return;
+            }
+            //log(x + ', ' + y);
+
+            this.metaWindow = null;
+            // work out which child the click fell in.
+            if (x >= this._parentActor.width || x < 0) {
+                return;
+                log('could not find the window');
+            }
+            let i,
+                child = null,
+                children = this._parentActor._delegate._windowButtonBox.actor.get_children();
+            for (i = 0; i < children.length; ++i) {
+                child = children[i];
+                x -= child.width;
+                if (x <= 0) {
+                    child._originalWidth = child.width;
+                    break;
                 }
-                return false;
-            }));
+            }
+
+            this._parentActor._delegate._windowButtonBox.expandChild(i);
+            // what about expanding that button out to its full width?
+            this.metaWindow = (child._delegate ? child._delegate.metaWindow : null);
+            //log('metaWindow: ' + child);
+            this._updateWindowOptions();
         }
     },
 
     // UPTO: if you cancel the menu by clicking outside, it doesn't forget!
     close: function(animate) {
         RightClickPopupMenu.prototype.close.call(this, animate);
-        log('close');
         Mainloop.idle_add(Lang.bind(this, this._forgetButtonClicked));
     },
 
     _forgetButtonClicked: function () {
-        log('forget!');
         this.metaWindow = null;
-        if (this._windowButtonAffected) {
-            this._windowButtonAffected.remove_style_pseudo_class('to-be-affected');
-            this._windowButtonAffected = null;
-        }
+        this._parentActor._delegate._windowButtonBox.undoExpand();
         return false;
     },
 
