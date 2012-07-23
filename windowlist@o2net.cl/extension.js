@@ -35,8 +35,6 @@ const Extension = imports.misc.extensionUtils.getCurrentExtension();
 const SpecialMenus = Extension.imports.specialMenus;
 const SpecialButtons = Extension.imports.specialButtons;
 
-const Wnck = SpecialMenus.Wnck; // either imports.gi.Wnck or false.
-
 const OPTIONS = {
                     // DISPLAY_TITLE
                     //     TITLE: display the app title next to each icon
@@ -419,27 +417,6 @@ AppGroup.prototype = {
             return null
     },
 
-    _getWnckWindowForFocusWindow: function () {
-        if (!this.lastFocused || !Wnck) {
-            return null;
-        }
-        Wnck.Screen.get_default().force_update(); // make sure window list is up to date
-        let windows = Wnck.Screen.get_default().get_windows();
-        for (let i = 0; i < windows.length; ++i) {
-            if (windows[i].get_name() === this.lastFocused.title &&
-                    windows[i].get_application().get_name() === this.app.get_name() &&
-                    windows[i].get_pid() === this.lastFocused.get_pid()) {
-                let rect = this.lastFocused.get_outer_rect();
-                let [x, y, width, height] = windows[i].get_geometry();
-                if (rect.x === x && rect.y === y && rect.width === width &&
-                        rect.height === height) {
-                    return windows[i];
-                }
-            }
-        }
-        return null;
-    },
-
     // updates the internal list of metaWindows
     // to include all windows corresponding to this.app on the workspace
     // metaWorkspace
@@ -464,7 +441,6 @@ AppGroup.prototype = {
         // will be triggered when the app button is pressed
         if (!this.lastFocused) {
             this.lastFocused = this._getLastFocusedWindow();
-            this.wnckWindow = this._getWnckWindowForFocusWindow();
         }
         if (this.lastFocused) {
             this._windowTitleChanged(this.lastFocused);
@@ -507,7 +483,6 @@ AppGroup.prototype = {
             let nextWindow = this.metaWindows.keys()[0];
             if (nextWindow) {
                 this.lastFocused = nextWindow;
-                this.wnckWindow = this._getWnckWindowForFocusWindow();
                 this._windowTitleChanged(this.lastFocused);
                 this.hoverMenu.setMetaWindow(this.lastFocused);
             }
@@ -546,7 +521,6 @@ AppGroup.prototype = {
     _focusWindowChange: function(metaWindow) {
         if (metaWindow.appears_focused) {
             this.lastFocused = metaWindow;
-            this.wnckWindow = this._getWnckWindowForFocusWindow();
             this._windowTitleChanged(this.lastFocused);
             this.hoverMenu.setMetaWindow(this.lastFocused);
         }

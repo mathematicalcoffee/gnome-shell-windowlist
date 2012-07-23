@@ -397,6 +397,48 @@ ButtonBox.prototype = {
              });
     },
 
+    expandChild: function (index) {
+        let children = this.actor.get_children();
+
+        /* have to simultaneously squish the other children & expand the
+         * specified child
+         */
+        for (let i = 0; i < children.length; ++i) {
+            let child = children[i];
+            child._originalWidth = child.width;
+            Tweener.addTween(child,
+                    // FIXME: if width is set to 0 we get a whole bunch of
+                    // Cluter-CRITICAL as above.
+                { width: (i === index ? this.actor.width : 3),
+                  time: BUTTON_BOX_ANIMATION_TIME,
+                  transition: "easeOutQuad",
+                  onComplete: (i === index ? function () {} :
+                      Lang.bind(child, function () {
+                          this.hide();
+                      }))
+                });
+        }
+        this._expanded = true;
+    },
+
+    undoExpand: function () {
+        if (!this._expanded) {
+            return;
+        }
+        // FIXME: fadein.
+        let children = this.actor.get_children();
+        for (let i = 0; i < children.length; ++i) {
+            let child = children[i];
+            child.show();
+            Tweener.addTween(child,
+                { width: child._originalWidth,
+                  time: BUTTON_BOX_ANIMATION_TIME,
+                  transition: "easeOutQuad"
+                });
+        }
+        this._expanded = false;
+    },
+
     add: function(button) {
         this.actor.add_actor(button.actor);
     },

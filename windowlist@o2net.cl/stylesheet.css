@@ -4,7 +4,6 @@
     color: blue;
     font-style: italic;
 }
-
 .window-list-box {
     spacing: 6px;
     -title-format: trad;
@@ -29,16 +28,30 @@
     background-color: #4c4c4c;
 }
 
+/* Window options buttons. */
 .window-options-button {
-    border: 1px solid white;
+    background-image: url("window-options-button.svg");
+    height: 2em;
+    width: 2em;
+    text-align: center;
+    padding-top: .2em;
+    padding-bottom: .2em;
     color: white;
-    padding: 4px;
 }
 
 .window-options-button:hover {
-    background-color: black;
+    -st-background-image-shadow: 2px 2px 6px white;
 }
 
 .window-options-button:toggled {
-    background-color: #76b0ec;
+    color: #76b0ec;
+    background: url("window-options-button-toggled.svg");
+}
+
+/* Althought the MAXIMIZE button gets toggled I do not want this to
+ * be visible.
+ */
+#MAXIMIZE:toggled {
+    color: white;
+    background: url("window-options-button.svg");
 }
