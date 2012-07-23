@@ -77,6 +77,7 @@ const WindowOptions = {
         symbol: '+',
         action: function (win) {
             Mainloop.idle_add(Lang.bind(this, function () {
+                win.raise();
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
                     rect    = win.get_outer_rect(),
@@ -96,6 +97,7 @@ const WindowOptions = {
         symbol: '\u21f2',
         action: function (win) {
             Mainloop.idle_add(Lang.bind(this, function () {
+                win.raise();
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
                     rect    = win.get_outer_rect(),
@@ -163,9 +165,8 @@ const WindowOptions = {
         label: M_("Unma_ximize"),
         symbol: '\u2752',
         // \u29c9 is two interlinked squares. It's quite tall though.
-        // U+25A3 white square with black square within
-        // U+25F3 white square with upper right quadrant
-        // U+2752 upper right shadowed white square
+        // \u25f3 white square with upper right quadrant
+        // \u2752 upper right shadowed white square
         action: function (win) {
             win.unmaximize(Meta.MaximizeFlags.BOTH);
         }
@@ -844,42 +845,46 @@ RightClickAppPopupMenu.prototype = {
     /* OVERRIDE parent implementation to determine which WindowButton to affect */
     _onParentActorButtonRelease: function(actor, event) {
         RightClickPopupMenu.prototype._onParentActorButtonRelease.call(this, actor, event);
-        this._forgetButtonClicked();
-        if (!this.appGroup.appButtonVisible) {
-            /* Try to work out which window we are hovering over */
-            let [x, y] = event.get_coords(),
-                result = false;
-            //log(x + ', ' + y);
-            [result, x, y] = this._parentActor.transform_stage_point(x, y);
-            if (!result) {
-                log('could not transform stage point to actor-relative point');
-                return;
-            }
-            //log(x + ', ' + y);
-
-            this.metaWindow = null;
-            // work out which child the click fell in.
-            if (x >= this._parentActor.width || x < 0) {
-                return;
-                log('could not find the window');
-            }
-            let i,
-                child = null,
-                children = this._parentActor._delegate._windowButtonBox.actor.get_children();
-            for (i = 0; i < children.length; ++i) {
-                child = children[i];
-                x -= child.width;
-                if (x <= 0) {
-                    child._originalWidth = child.width;
-                    break;
+        // if the right-click menu is open, indicate to the user which window will be
+        // affected by it.
+        if (this.isOpen) {
+            this._forgetButtonClicked();
+            if (!this.appGroup.appButtonVisible) {
+                /* Try to work out which window we are hovering over */
+                let [x, y] = event.get_coords(),
+                    result = false;
+                //log(x + ', ' + y);
+                [result, x, y] = this._parentActor.transform_stage_point(x, y);
+                if (!result) {
+                    log('could not transform stage point to actor-relative point');
+                    return;
                 }
-            }
+                //log(x + ', ' + y);
 
-            this._parentActor._delegate._windowButtonBox.expandChild(i);
-            // what about expanding that button out to its full width?
-            this.metaWindow = (child._delegate ? child._delegate.metaWindow : null);
-            //log('metaWindow: ' + child);
-            this._updateWindowOptions();
+                this.metaWindow = null;
+                // work out which child the click fell in.
+                if (x >= this._parentActor.width || x < 0) {
+                    return;
+                    log('could not find the window');
+                }
+                let i,
+                    child = null,
+                    children = this._parentActor._delegate._windowButtonBox.actor.get_children();
+                for (i = 0; i < children.length; ++i) {
+                    child = children[i];
+                    x -= child.width;
+                    if (x <= 0) {
+                        child._originalWidth = child.width;
+                        break;
+                    }
+                }
+
+                this._parentActor._delegate._windowButtonBox.expandChild(i);
+                // what about expanding that button out to its full width?
+                this.metaWindow = (child._delegate ? child._delegate.metaWindow : null);
+                //log('metaWindow: ' + child);
+                this._updateWindowOptions();
+            }
         }
     },
 
