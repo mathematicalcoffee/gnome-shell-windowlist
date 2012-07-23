@@ -12,10 +12,12 @@ const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
 const Meta = imports.gi.Meta;
+const Overview = imports.ui.overview;
 const Params = imports.misc.params;
 const PopupMenu = imports.ui.popupMenu;
 const Shell = imports.gi.Shell;
 const St = imports.gi.St;
+const Tweener = imports.ui.tweener;
 
 const Extension = imports.ui.extensionSystem.extensions['windowlist@o2net.cl'];
 const SpecialButtons = Extension.specialButtons;
@@ -169,6 +171,8 @@ const WindowOptions = {
         }
     }
 };
+const WnckOptions = ['ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE'];
+
 // remove underscores:
 for (let dummy in WindowOptions) {
     if (WindowOptions.hasOwnProperty(dummy)) {
@@ -478,8 +482,8 @@ function WindowThumbnail() {
 
 WindowThumbnail.prototype = {
     _init: function (metaWindow, app, params) {
-        this.metaWindow = metaWindow
-        this.app = app
+        this.metaWindow = metaWindow;
+        this.app = app;
 
         // Inherit the theme from the alt-tab menu
         this.actor = new St.BoxLayout({ style_class: 'window-thumbnail',
@@ -495,6 +499,10 @@ WindowThumbnail.prototype = {
         this.titleActor.width = THUMBNAIL_DEFAULT_SIZE;
 
         this._setupWindowOptions();
+        // simulate hide without losing height.
+        this.windowOptions.reactive = false;
+        this.windowOptions.opacity = 0;
+
         this.actor.add(this.thumbnailActor);
         this.actor.add(this.titleActor);
 
@@ -506,13 +514,29 @@ WindowThumbnail.prototype = {
                                                     this.titleActor.text = this.metaWindow.get_title();
                                 }));
         this.actor.connect('enter-event', Lang.bind(this, function() {
-                                                        this.actor.add_style_pseudo_class('hover');
-                                                        this.actor.add_style_pseudo_class('selected');
-                                                    }));
+            this.actor.add_style_pseudo_class('hover');
+            this.actor.add_style_pseudo_class('selected');
+            Tweener.addTween(this.windowOptions,
+                { opacity: 255,
+                  time: Overview.ANIMATION_TIME,
+                  transition: 'easeOutQuad',
+                  onComplete: Lang.bind(this, function () {
+                      this.windowOptions.reactive = true;
+                  })
+                });
+        }));
         this.actor.connect('leave-event', Lang.bind(this, function() {
-                                                        this.actor.remove_style_pseudo_class('hover');
-                                                        this.actor.remove_style_pseudo_class('selected');
-                                                    }));
+            this.actor.remove_style_pseudo_class('hover');
+            this.actor.remove_style_pseudo_class('selected');
+            Tweener.addTween(this.windowOptions,
+                { opacity: 0,
+                  time: Overview.ANIMATION_TIME,
+                  transition: 'easeOutQuad',
+                  onComplete: Lang.bind(this, function () {
+                      this.windowOptions.reactive = false;
+                  })
+                });
+        }));
     },
 
     _setupWindowOptions: function () {
@@ -520,36 +544,46 @@ WindowThumbnail.prototype = {
         this._buttonInfo = [ 'ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE',
             'MOVE', 'RESIZE', 'MINIMIZE', 'MAXIMIZE', 'CLOSE_WINDOW' ];
         if (!Wnck) {
-            delete this._buttonInfo.ALWAYS_ON_TOP;
-            delete this._buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
-        }
+            for (let i = 0; i < WnckOptions.length; ++i) {
+                let j = this._buttonInfo.indexOf(WnckOptions[i]);
+                if (j >= 0) {
+                    this._buttonInfo.splice(j, 1);
+                }
+            }
+            this.wnckWindow = null;
+        } else {
 
         /* try to get this.metaWindow as Wnck window. Compare
          * by window name and app and size/position.
          * If you have two windows with the same title (like two terminals at
          * home directory) exactly on top of each other, then too bad for you.
          */
-        Wnck.Screen.get_default().force_update(); // make sure window list is up to date
-        let windows = Wnck.Screen.get_default().get_windows();
-        for (let i = 0; i < windows.length; ++i) {
-            if (windows[i].get_name() === this.metaWindow.title &&
-                    windows[i].get_application().get_name() === this.app.get_name() &&
-                    windows[i].get_pid() === this.metaWindow.get_pid()) {
-                let rect = this.metaWindow.get_outer_rect();
-                let [x, y, width, height] = windows[i].get_geometry();
-                if (rect.x === x && rect.y === y && rect.width === width &&
-                        rect.height === height) {
-                    this.wnckWindow = windows[i];        
-                    break;
+            Wnck.Screen.get_default().force_update(); // make sure window list is up to date
+            let windows = Wnck.Screen.get_default().get_windows();
+            for (let i = 0; i < windows.length; ++i) {
+                if (windows[i].get_name() === this.metaWindow.title &&
+                        windows[i].get_application().get_name() === this.app.get_name() &&
+                        windows[i].get_pid() === this.metaWindow.get_pid()) {
+                    let rect = this.metaWindow.get_outer_rect();
+                    let [x, y, width, height] = windows[i].get_geometry();
+                    if (rect.x === x && rect.y === y && rect.width === width &&
+                            rect.height === height) {
+                        this.wnckWindow = windows[i];        
+                        break;
+                    }
+                }
+            }
+            if (!this.wnckWindow) {
+                log("couldn't find the wnck window corresponding to this.metaWindow");
+                for (let i = 0; i < WnckOptions.length; ++i) {
+                    let j = this._buttonInfo.indexOf(WnckOptions[i]);
+                    if (j >= 0) {
+                        this._buttonInfo.splice(j, 1);
+                    }
                 }
             }
         }
 
-        if (!this.wnckWindow) {
-            log("couldn't find the wnck window corresponding to this.metaWindow");
-            delete this.buttonInfo.ALWAYS_ON_TOP;
-            delete this.buttonInfo.ALWAYS_ON_VISIBLE_WORKSPACE;
-        }
         /* Add buttons */
         this.windowOptions = new St.BoxLayout({reactive: true, vertical: false});
         this._windowOptionItems = {};
@@ -578,7 +612,6 @@ WindowThumbnail.prototype = {
                 this.remove_style_pseudo_class('hover');
                 this._parent.titleActor.text = this._parent.metaWindow.get_title();
             }));
-            //this._windowOptionItems[buttonName].set_tooltip_text(buttonName);
             this._windowOptionIDs.push(
                 button.connect('clicked',
                     Lang.bind(this, this._onActivateWindowOption, op)));
