@@ -19,9 +19,6 @@ const Shell = imports.gi.Shell;
 const St = imports.gi.St;
 const Tweener = imports.ui.tweener;
 
-const Extension = imports.ui.extensionSystem.extensions['windowlist@o2net.cl'];
-const SpecialButtons = Extension.specialButtons;
-
 const HOVER_MENU_TIMEOUT = 1000;
 const THUMBNAIL_DEFAULT_SIZE = Math.max(150, Main.layoutManager.primaryMonitor.width / 10);
 /* see if Wnck can be found (if not, skip 'always on top' and 
@@ -483,6 +480,7 @@ function WindowThumbnail() {
 
 WindowThumbnail.prototype = {
     _init: function (metaWindow, app, params) {
+        // TODO: problems with padding.
         this.metaWindow = metaWindow;
         this.app = app;
 
@@ -553,7 +551,6 @@ WindowThumbnail.prototype = {
             }
             this.wnckWindow = null;
         } else {
-
         /* try to get this.metaWindow as Wnck window. Compare
          * by window name and app and size/position.
          * If you have two windows with the same title (like two terminals at
@@ -561,14 +558,20 @@ WindowThumbnail.prototype = {
          */
             Wnck.Screen.get_default().force_update(); // make sure window list is up to date
             let windows = Wnck.Screen.get_default().get_windows();
+            log('windows.length: ' + windows.length);
             for (let i = 0; i < windows.length; ++i) {
                 if (windows[i].get_name() === this.metaWindow.title &&
-                        windows[i].get_application().get_name() === this.app.get_name() &&
+                        // ack! Chromium vs Chromium Web Browser (Wnck says that
+                        // getting the application name uses suboptimal heuristics)
+                        // windows[i].get_application().get_name() === this.app.get_name() &&
                         windows[i].get_pid() === this.metaWindow.get_pid()) {
                     let rect = this.metaWindow.get_outer_rect();
+                    // UPTO FIXME: does not work with Maximus.
+                    log(rect.x + ' ' + rect.y + ' ' + rect.height + ' ' + rect.width);
+                    log('window.get_geometry: ' + JSON.stringify(windows[i].get_geometry()));
                     let [x, y, width, height] = windows[i].get_geometry();
-                    if (rect.x === x && rect.y === y && rect.width === width &&
-                            rect.height === height) {
+                    if (rect.x === x && rect.y === y &&
+                            rect.width === width && rect.height === height) {
                         this.wnckWindow = windows[i];        
                         break;
                     }
@@ -638,7 +641,7 @@ WindowThumbnail.prototype = {
                 fun = (WindowOptions[op].metaIsToggled || WindowOptions[op].isToggled);
                 //other = WindowOptions[op].toggleOff;
             if (!this._windowOptionItems[op]) {
-                return;
+                return false;
             }
             if (fun(this.metaWindow)) {
                 this._windowOptionItems[op].add_style_pseudo_class('toggled');
