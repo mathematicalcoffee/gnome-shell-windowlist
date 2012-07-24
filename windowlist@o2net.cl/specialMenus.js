@@ -121,7 +121,6 @@ const WindowOptions = {
             return win.above;
         },
         action: function (win) {
-            log('making window above');
             win.make_above();
         }
     },
@@ -561,17 +560,17 @@ WindowThumbnail.prototype = {
             log('windows.length: ' + windows.length);
             for (let i = 0; i < windows.length; ++i) {
                 if (windows[i].get_name() === this.metaWindow.title &&
-                        // ack! Chromium vs Chromium Web Browser (Wnck says that
-                        // getting the application name uses suboptimal heuristics)
-                        // windows[i].get_application().get_name() === this.app.get_name() &&
+                        // cannot compare app name as Wnck "uses suboptimal heuristics":
+                        // e.g. Chromium (wnck) vs Chromium Web Browser (this.app)
+                        //windows[i].get_application().get_name() === this.app.get_name() &&
                         windows[i].get_pid() === this.metaWindow.get_pid()) {
                     let rect = this.metaWindow.get_outer_rect();
-                    // UPTO FIXME: does not work with Maximus.
-                    log(rect.x + ' ' + rect.y + ' ' + rect.height + ' ' + rect.width);
-                    log('window.get_geometry: ' + JSON.stringify(windows[i].get_geometry()));
-                    let [x, y, width, height] = windows[i].get_geometry();
-                    if (rect.x === x && rect.y === y &&
-                            rect.width === width && rect.height === height) {
+                    // if window is undecorated we must compare client_window_geometry.
+                    let [x, y, width, height] = (this.metaWindow.decorated ? 
+                            windows[i].get_geometry() :
+                            windows[i].get_client_window_geometry());
+                    if (rect.x === x && rect.y === y && rect.width === width &&
+                            rect.height === height) {
                         this.wnckWindow = windows[i];        
                         break;
                     }
