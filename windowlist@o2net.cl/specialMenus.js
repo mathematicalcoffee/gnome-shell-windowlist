@@ -642,7 +642,7 @@ WindowThumbnail.prototype = {
                 fun = (WindowOptions[op].metaIsToggled || WindowOptions[op].isToggled);
                 //other = WindowOptions[op].toggleOff;
             if (!this._windowOptionItems[op]) {
-                return;
+                return false;
             }
             if (fun(this.metaWindow)) {
                 this._windowOptionItems[op].add_style_pseudo_class('toggled');
