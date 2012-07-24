@@ -124,7 +124,6 @@ const WindowOptions = {
             return win.above;
         },
         action: function (win) {
-            log('making window above');
             win.make_above();
         }
     },
@@ -563,10 +562,15 @@ WindowThumbnail.prototype = {
             let windows = Wnck.Screen.get_default().get_windows();
             for (let i = 0; i < windows.length; ++i) {
                 if (windows[i].get_name() === this.metaWindow.title &&
-                        windows[i].get_application().get_name() === this.app.get_name() &&
+                        // cannot compare app name as Wnck "uses suboptimal heuristics":
+                        // e.g. Chromium (wnck) vs Chromium Web Browser (this.app)
+                        //windows[i].get_application().get_name() === this.app.get_name() &&
                         windows[i].get_pid() === this.metaWindow.get_pid()) {
                     let rect = this.metaWindow.get_outer_rect();
-                    let [x, y, width, height] = windows[i].get_geometry();
+                    // if window is undecorated we must compare client_window_geometry.
+                    let [x, y, width, height] = (this.metaWindow.decorated ? 
+                            windows[i].get_geometry() :
+                            windows[i].get_client_window_geometry());
                     if (rect.x === x && rect.y === y && rect.width === width &&
                             rect.height === height) {
                         this.wnckWindow = windows[i];        
