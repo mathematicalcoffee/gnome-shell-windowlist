@@ -557,7 +557,6 @@ WindowThumbnail.prototype = {
          */
             Wnck.Screen.get_default().force_update(); // make sure window list is up to date
             let windows = Wnck.Screen.get_default().get_windows();
-            log('windows.length: ' + windows.length);
             for (let i = 0; i < windows.length; ++i) {
                 if (windows[i].get_name() === this.metaWindow.title &&
                         // cannot compare app name as Wnck "uses suboptimal heuristics":
