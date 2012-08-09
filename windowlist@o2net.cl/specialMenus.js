@@ -60,6 +60,7 @@ const WindowOptions = {
             return (win.get_maximized() === Meta.MaximizeFlags.BOTH);
         },
         action: function (win) {
+            win.raise();
             win.maximize(Meta.MaximizeFlags.BOTH);
         }
     },
@@ -167,6 +168,7 @@ const WindowOptions = {
         // \u25f3 white square with upper right quadrant
         // \u2752 upper right shadowed white square
         action: function (win) {
+            win.raise();
             win.unmaximize(Meta.MaximizeFlags.BOTH);
         }
     }
@@ -681,10 +683,6 @@ WindowThumbnail.prototype = {
         if (this._windowOptionItems[op]._toggled) {
             op = WindowOptions[op].toggleOff;
         }
-        /*
-        if (WindowOptions[op].isToggled && WindowOptions[op].isToggled(win)) {
-        }
-        */
         WindowOptions[op].action(win);
         // bah: need this for the .make_above() (etc) to go through.
         // But I think there is a noticable delay.
