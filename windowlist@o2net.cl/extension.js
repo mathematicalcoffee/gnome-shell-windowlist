@@ -5,6 +5,7 @@
 // Authors:
 //   Kurt Rottmann <kurtrottmann@gmail.com>
 //   Jason Siefken
+//   Amy Chan <mathematical.coffee@gmail.com> (window options stuff)
 
 // Taking code from
 // Copyright (C) 2011 R M Yorston
