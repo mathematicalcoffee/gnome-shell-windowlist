@@ -37,17 +37,33 @@ const SpecialMenus = Extension.specialMenus;
 const SpecialButtons = Extension.specialButtons;
 
 const OPTIONS = {
-                    // DISPLAY_TITLE
-                    //     TITLE: display the app title next to each icon
-                    //     APP: display the app name next to each icon
-                    //     NONE: display no text next to each icon
-                    // Note, this option only applies when app grouping is enabled
-                    DISPLAY_TITLE: 'TITLE',
-                    // GROUP_BY_APP
-                    //     true: only one button is shown for each application (all windows are grouped)
-                    //     false: every window has its own button
-                    GROUP_BY_APP: true
-                };
+    // DISPLAY_TITLE
+    //     TITLE: display the app title next to each icon
+    //     APP: display the app name next to each icon
+    //     NONE: display no text next to each icon
+    // Note, this option only applies when app grouping is enabled
+    DISPLAY_TITLE: 'TITLE',
+    // GROUP_BY_APP
+    //     true: only one button is shown for each application (all windows are grouped)
+    //     false: every window has its own button
+    GROUP_BY_APP: true,
+
+    // What order do you want the window options (minimize, maximize, ...) to appear?
+    // (both in the right-click menu when the group is expanded, and in the hover
+    //  menu.)
+    // If you don't want a button comment it out.
+    // NOTE: always on top/visible workspace buttons will not appear in the right-
+    // click menu for now due to implementation difficulties.
+    WINDOW_OPTION_BUTTONS: [
+        'MINIMIZE',
+        'MAXIMIZE', // combined maximize/restore button
+        'MOVE',
+        'RESIZE',
+        'ALWAYS_ON_TOP',  // always on top toggle
+        'ALWAYS_ON_VISIBLE_WORKSPACE', // always on visible workspace toggle
+        'CLOSE_WINDOW' // close window
+    ]
+};
 
 // Globally variables needed for disabling the extension
 let windowListManager, restoreState={}, clockWrapper, appTracker;
@@ -316,11 +332,12 @@ AppGroup.prototype = {
         this.windowButtonsVisible = true;
 
         // Set up the right click menu
-        this.rightClickMenu = new SpecialMenus.RightClickAppPopupMenu(this.actor, this);
+        this.rightClickMenu = new SpecialMenus.RightClickAppPopupMenu(this.actor,
+                this, OPTIONS['WINDOW_OPTION_BUTTONS']);
         this.menuManager = new PopupMenu.PopupMenuManager({actor: this.actor});
         this.menuManager.addMenu(this.rightClickMenu);
         // Set up the hover menu
-        this.hoverMenu = new Extension.specialMenus.AppThumbnailHoverMenu(this.actor, this.metaWindow, this.app)
+        this.hoverMenu = new Extension.specialMenus.AppThumbnailHoverMenu(this.actor, this.metaWindow, this.app, OPTIONS['WINDOW_OPTION_BUTTONS']);
         this.hoverController = new Extension.specialMenus.HoverMenuController(this.actor, this.hoverMenu);
     },
 

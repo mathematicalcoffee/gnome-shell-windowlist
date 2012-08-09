@@ -175,7 +175,7 @@ const WindowOptions = {
 };
 const WnckOptions = ['ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE'];
 
-// remove underscores:
+// remove underscores from translated text:
 for (let dummy in WindowOptions) {
     if (WindowOptions.hasOwnProperty(dummy)) {
         WindowOptions[dummy].label = WindowOptions[dummy].label.replace(/_/g, '');
@@ -339,13 +339,14 @@ function AppThumbnailHoverMenu() {
 AppThumbnailHoverMenu.prototype = {
     __proto__: HoverMenu.prototype,
 
-    _init: function(actor, metaWindow, app) {
+    _init: function(actor, metaWindow, app, windowOptionButtons) {
         HoverMenu.prototype._init.call(this, actor, { reactive: true });
 
         this.metaWindow = metaWindow;
         this.app = app;
 
-        this.appSwitcherItem = new PopupMenuAppSwitcherItem(this.metaWindow, this.app);
+        this.appSwitcherItem = new PopupMenuAppSwitcherItem(this.metaWindow,
+            this.app, windowOptionButtons);
         this.addMenuItem(this.appSwitcherItem);
     },
 
@@ -361,7 +362,7 @@ AppThumbnailHoverMenu.prototype = {
         this.metaWindow = metaWindow;
         this.appSwitcherItem.setMetaWindow(metaWindow);
     }
-}
+};
 
 
 function PopupMenuThumbnailItem() {
@@ -388,7 +389,7 @@ function PopupMenuAppSwitcherItem() {
 PopupMenuAppSwitcherItem.prototype = {
     __proto__: PopupMenu.PopupBaseMenuItem.prototype,
 
-    _init: function (metaWindow, app, params) {
+    _init: function (metaWindow, app, windowOptionButtons, params) {
         params = Params.parse(params, { hover: false });
         PopupMenu.PopupBaseMenuItem.prototype._init.call(this, params);
 
@@ -405,6 +406,9 @@ PopupMenuAppSwitcherItem.prototype = {
         this.divider = new St.Bin({ style_class: 'app-window-switcher-divider',
                                     y_fill: true });
         this.appContainer.add_actor(this.divider);
+
+        this._buttonInfo = windowOptionButtons; // what buttons to display
+
         this._refresh();
 
         this.addActor(this.appContainer);
@@ -432,7 +436,7 @@ PopupMenuAppSwitcherItem.prototype = {
             }
             // If our metaWindow is null, just move along
             if (this.metaWindow) {
-                this.metaWindowThumbnail = new WindowThumbnail(this.metaWindow, this.app);
+                this.metaWindowThumbnail = new WindowThumbnail(this.metaWindow, this.app, this._buttonInfo);
                 this._connectToWindowOpen(this.metaWindowThumbnail.actor, this.metaWindow);
                 this.appContainer.insert_actor(this.metaWindowThumbnail.actor, 0);
             }
@@ -452,7 +456,7 @@ PopupMenuAppSwitcherItem.prototype = {
             if (this.appThumbnails[metaWindow]) {
                 this.appThumbnails[metaWindow].thumbnail._refresh();
             } else {
-                let thumbnail = new WindowThumbnail(metaWindow, this.app);
+                let thumbnail = new WindowThumbnail(metaWindow, this.app, this._buttonInfo);
                 this.appThumbnails[metaWindow] = { metaWindow: metaWindow,
                                                    thumbnail: thumbnail };
                 this.appContainer.add_actor(this.appThumbnails[metaWindow].thumbnail.actor);
@@ -483,7 +487,7 @@ function WindowThumbnail() {
 }
 
 WindowThumbnail.prototype = {
-    _init: function (metaWindow, app, params) {
+    _init: function (metaWindow, app, buttonInfo, params) {
         this.metaWindow = metaWindow;
         this.app = app;
 
@@ -500,6 +504,7 @@ WindowThumbnail.prototype = {
         //fixing this should also allow the text to be centered
         this.titleActor.width = THUMBNAIL_DEFAULT_SIZE;
 
+        this._buttonInfo = buttonInfo;
         this._setupWindowOptions();
         // simulate hide without losing height.
         this.windowOptions.reactive = false;
@@ -543,8 +548,6 @@ WindowThumbnail.prototype = {
 
     _setupWindowOptions: function () {
         /* Stuff for window options */
-        this._buttonInfo = [ 'ALWAYS_ON_TOP', 'ALWAYS_ON_VISIBLE_WORKSPACE',
-            'MOVE', 'RESIZE', 'MINIMIZE', 'MAXIMIZE', 'CLOSE_WINDOW' ];
         if (!Wnck) {
             for (let i = 0; i < WnckOptions.length; ++i) {
                 let j = this._buttonInfo.indexOf(WnckOptions[i]);
@@ -742,7 +745,7 @@ function RightClickAppPopupMenu() {
 RightClickAppPopupMenu.prototype = {
     __proto__: RightClickPopupMenu.prototype,
 
-    _init: function(actor, appGroup, params) {
+    _init: function(actor, appGroup, windowOptions, params) {
         RightClickPopupMenu.prototype._init.call(this, actor, params);
 
         this.appGroup = appGroup;
@@ -754,7 +757,7 @@ RightClickAppPopupMenu.prototype = {
         this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         /* Window options */
-        this._buttonInfo = ['MINIMIZE', 'MAXIMIZE', 'MOVE', 'RESIZE', 'CLOSE_WINDOW'];
+        this._buttonInfo = windowOptions;
         // only display if the group is expanded
         this._displayWindowOptionsMenu(!this.appGroup.appButtonVisible);
         /* /End window options */
@@ -781,6 +784,11 @@ RightClickAppPopupMenu.prototype = {
         this._windowOptionsSubMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         for (let i = 0; i < this._buttonInfo.length; ++i) {
             let op = this._buttonInfo[i];
+            // skip the Wnck options for now because I'm having trouble getting
+            // the Wnck window matching the metaWindow.
+            if (WnckOptions.indexOf(op) > -1) {
+                continue;
+            }
             this._windowOptionItems[op] = new PopupMenu.PopupMenuItem(
                     WindowOptions[op].label);
             this._windowOptionItems[op].connect('activate',
