@@ -504,14 +504,14 @@ WindowThumbnail.prototype = {
         //fixing this should also allow the text to be centered
         this.titleActor.width = THUMBNAIL_DEFAULT_SIZE;
 
+        this.actor.add(this.thumbnailActor);
+        this.actor.add(this.titleActor);
+
         this._buttonInfo = buttonInfo;
         this._setupWindowOptions();
         // simulate hide without losing height.
         this.windowOptions.reactive = false;
         this.windowOptions.opacity = 0;
-
-        this.actor.add(this.thumbnailActor);
-        this.actor.add(this.titleActor);
 
         this._refresh();
 
@@ -595,7 +595,11 @@ WindowThumbnail.prototype = {
         }
 
         /* Add buttons */
-        this.windowOptions = new St.BoxLayout({reactive: true, vertical: false});
+        this.windowOptions = new St.BoxLayout({
+            style_class: 'window-options-box',
+            reactive: true,
+            vertical: false
+        });
         this._windowOptionItems = {};
         this._windowOptionIDs = [];
         for (let i = 0; i < this._buttonInfo.length; ++i) {
@@ -632,6 +636,16 @@ WindowThumbnail.prototype = {
 
         this.actor.add(this.windowOptions, {expand: false, x_fill: false, 
             x_align: St.Align.MIDDLE});
+
+        // make the window options half-overlap this.actor.
+        // Mainloop needed while we weight for height/width to be allocated.
+        Mainloop.idle_add(Lang.bind(this, function () {
+            this.windowOptions.anchor_y = this.windowOptions.height/2;
+            this.windowOptions.y = 0;
+            // for some reason it loses centering
+            this.windowOptions.x = (this.actor.width - this.windowOptions.width) / 2;
+            return false;
+        }));
     },
 
     /* Every time the hover menu is shown update the always on top/visible workspace
@@ -909,9 +923,6 @@ RightClickAppPopupMenu.prototype = {
         this._parentActor._delegate._windowButtonBox.undoExpand();
         return false;
     },
-
-    // TODO: when user exits without selecting we must forget.
-
 
     _onMenuItemExpandGroup: function() {
         this.appGroup.showWindowButtons(true);
