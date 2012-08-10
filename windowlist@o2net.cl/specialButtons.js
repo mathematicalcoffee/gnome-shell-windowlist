@@ -320,7 +320,7 @@ WindowButton.prototype = {
     },
 
     _onButtonRelease: function(actor, event) {
-        if (Shell.get_event_state(event) & Clutter.ModifierType.BUTTON1_MASK) {
+        if (event.get_state() & Clutter.ModifierType.BUTTON1_MASK) {
             if (this.metaWindow.has_focus()) {
                 this.metaWindow.minimize(global.get_current_time());
             } else {
