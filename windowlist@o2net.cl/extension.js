@@ -5,6 +5,7 @@
 // Authors:
 //   Kurt Rottmann <kurtrottmann@gmail.com>
 //   Jason Siefken
+//   Amy Chan <mathematical.coffee@gmail.com> (window options stuff)
 
 // Taking code from
 // Copyright (C) 2011 R M Yorston
@@ -36,17 +37,33 @@ const SpecialMenus = Extension.imports.specialMenus;
 const SpecialButtons = Extension.imports.specialButtons;
 
 const OPTIONS = {
-                    // DISPLAY_TITLE
-                    //     TITLE: display the app title next to each icon
-                    //     APP: display the app name next to each icon
-                    //     NONE: display no text next to each icon
-                    // Note, this option only applies when app grouping is enabled
-                    DISPLAY_TITLE: 'TITLE',
-                    // GROUP_BY_APP
-                    //     true: only one button is shown for each application (all windows are grouped)
-                    //     false: every window has its own button
-                    GROUP_BY_APP: true
-                };
+    // DISPLAY_TITLE
+    //     TITLE: display the app title next to each icon
+    //     APP: display the app name next to each icon
+    //     NONE: display no text next to each icon
+    // Note, this option only applies when app grouping is enabled
+    DISPLAY_TITLE: 'TITLE',
+    // GROUP_BY_APP
+    //     true: only one button is shown for each application (all windows are grouped)
+    //     false: every window has its own button
+    GROUP_BY_APP: true,
+
+    // What order do you want the window options (minimize, maximize, ...) to appear?
+    // (both in the right-click menu when the group is expanded, and in the hover
+    //  menu.)
+    // If you don't want a button comment it out.
+    // NOTE: always on top/visible workspace buttons will not appear in the right-
+    // click menu for now due to implementation difficulties.
+    WINDOW_OPTION_BUTTONS: [
+        'MINIMIZE',
+        'MAXIMIZE', // combined maximize/restore button
+        'MOVE',
+        'RESIZE',
+        'ALWAYS_ON_TOP',  // always on top toggle
+        'ALWAYS_ON_VISIBLE_WORKSPACE', // always on visible workspace toggle
+        'CLOSE_WINDOW' // close window
+    ]
+};
 
 // Globally variables needed for disabling the extension
 let windowListManager, restoreState={}, clockWrapper, appTracker;
@@ -315,11 +332,12 @@ AppGroup.prototype = {
         this.windowButtonsVisible = true;
 
         // Set up the right click menu
-        this.rightClickMenu = new SpecialMenus.RightClickAppPopupMenu(this.actor, this);
+        this.rightClickMenu = new SpecialMenus.RightClickAppPopupMenu(this.actor,
+                this, OPTIONS['WINDOW_OPTION_BUTTONS']);
         this.menuManager = new PopupMenu.PopupMenuManager({actor: this.actor});
         this.menuManager.addMenu(this.rightClickMenu);
         // Set up the hover menu
-        this.hoverMenu = new SpecialMenus.AppThumbnailHoverMenu(this.actor, this.metaWindow, this.app)
+        this.hoverMenu = new SpecialMenus.AppThumbnailHoverMenu(this.actor, this.metaWindow, this.app, OPTIONS['WINDOW_OPTION_BUTTONS']);
         this.hoverController = new SpecialMenus.HoverMenuController(this.actor, this.hoverMenu);
     },
 
@@ -421,6 +439,16 @@ AppGroup.prototype = {
     // to include all windows corresponding to this.app on the workspace
     // metaWorkspace
     _updateMetaWindows: function(metaWorkspace) {
+        // Note: if you restart the shell with windows on another workspace,
+        // those windows sometimes get 'window-removed' called on them, causing
+        // the app group to be destroyed.
+        // However there is a Mainloop.idle_add(_updateMetaWindows) which gets
+        // called *after* the app group has been destroyed, causing an error.
+        if (!this._windowButtonBox) {
+            // this app group has been destroyed already.
+            return;
+        }
+
         let tracker = Shell.WindowTracker.get_default();
         // Get a list of all interesting windows that are part of this app on the current workspace
         let windowList = metaWorkspace.list_windows().filter(Lang.bind(this, function(metaWindow) {

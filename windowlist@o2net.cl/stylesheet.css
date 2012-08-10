@@ -29,6 +29,14 @@
 }
 
 /* Window options buttons. */
+.window-options-box {
+    /* the following is about 1/2 the height of a window options button,
+     * causing the buttons to move down & overlap with the thumbnail,
+     * saving vertical space.
+    height: 1em;
+     */
+}
+
 .window-options-button {
     background-image: url("window-options-button.svg");
     height: 2em;
