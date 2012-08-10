@@ -439,6 +439,16 @@ AppGroup.prototype = {
     // to include all windows corresponding to this.app on the workspace
     // metaWorkspace
     _updateMetaWindows: function(metaWorkspace) {
+        // Note: if you restart the shell with windows on another workspace,
+        // those windows sometimes get 'window-removed' called on them, causing
+        // the app group to be destroyed.
+        // However there is a Mainloop.idle_add(_updateMetaWindows) which gets
+        // called *after* the app group has been destroyed, causing an error.
+        if (!this._windowButtonBox) {
+            // this app group has been destroyed already.
+            return;
+        }
+
         let tracker = Shell.WindowTracker.get_default();
         // Get a list of all interesting windows that are part of this app on the current workspace
         let windowList = metaWorkspace.list_windows().filter(Lang.bind(this, function(metaWindow) {
