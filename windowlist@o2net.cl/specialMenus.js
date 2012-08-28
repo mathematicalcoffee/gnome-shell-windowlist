@@ -43,12 +43,17 @@ const Gettext = imports.gettext;
 const M_ = Gettext.domain('mutter').gettext;
 /* For convenience: a WindowOptions namespace to hold the window function information */
 const WindowOptions = {
+    // TODO: raise or activate?
     /* the following expect `win` to be a Meta.Window */
     MINIMIZE: {
         label: M_("Mi_nimize"),
         symbol: '_',
         action: function (win) {
-            win.minimize();
+            if (win.minimized) {
+                win.unminimize();
+            } else {
+                win.minimize();
+            }
         }
     },
 
@@ -60,6 +65,9 @@ const WindowOptions = {
             return (win.get_maximized() === Meta.MaximizeFlags.BOTH);
         },
         action: function (win) {
+            if (win.minimized) {
+                win.unminimize();
+            }
             win.raise();
             win.maximize(Meta.MaximizeFlags.BOTH);
         }
@@ -77,8 +85,11 @@ const WindowOptions = {
         label: M_("_Move"),
         symbol: '+',
         action: function (win) {
+            if (win.minimized) {
+                win.unminimize();
+            }
+            win.raise();
             Mainloop.idle_add(Lang.bind(this, function () {
-                win.raise();
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
                     rect    = win.get_outer_rect(),
@@ -97,8 +108,11 @@ const WindowOptions = {
         label: M_("_Resize"),
         symbol: '\u21f2',
         action: function (win) {
+            if (win.minimized) {
+                win.unminimize();
+            }
+            win.raise();
             Mainloop.idle_add(Lang.bind(this, function () {
-                win.raise();
                 let pointer = Gdk.Display.get_default().get_device_manager().get_client_pointer(),
                     [scr,,] = pointer.get_position(),
                     rect    = win.get_outer_rect(),
@@ -125,6 +139,9 @@ const WindowOptions = {
             return win.above;
         },
         action: function (win) {
+            if (win.is_minimized()) {
+                win.unminimize();
+            }
             win.make_above();
         }
     },
@@ -140,6 +157,9 @@ const WindowOptions = {
             return win.is_on_all_workspaces();
         },
         action: function (win) {
+            if (win.is_minimized()) {
+                win.unminimize();
+            }
             win.pin();
         }
     },
@@ -168,8 +188,12 @@ const WindowOptions = {
         // \u25f3 white square with upper right quadrant
         // \u2752 upper right shadowed white square
         action: function (win) {
+            if (win.minimized) {
+                win.unminimize();
+            } else {
+                win.unmaximize(Meta.MaximizeFlags.BOTH);
+            }
             win.raise();
-            win.unmaximize(Meta.MaximizeFlags.BOTH);
         }
     }
 };
@@ -639,9 +663,10 @@ WindowThumbnail.prototype = {
 
         // make the window options half-overlap this.actor.
         // Mainloop needed while we weight for height/width to be allocated.
+        this.windowOptions.anchor_y = 8; // for now
+        this.windowOptions.y = 0;
         Mainloop.idle_add(Lang.bind(this, function () {
             this.windowOptions.anchor_y = this.windowOptions.height/2;
-            this.windowOptions.y = 0;
             // for some reason it loses centering
             this.windowOptions.x = (this.actor.width - this.windowOptions.width) / 2;
             return false;
